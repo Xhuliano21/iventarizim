@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
-  ArrowLeftRight, Bell, Boxes, DatabaseBackup, FileBarChart2,
+  ArrowLeftRight, Bell, Boxes, DatabaseBackup, DoorOpen, FileBarChart2,
   LayoutDashboard, LogOut, Menu, Package, Tags, Users, Warehouse, X
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/", label: "Paneli kryesor", icon: LayoutDashboard, end: true },
   { to: "/produktet", label: "Produktet", icon: Package },
   { to: "/kategorite", label: "Kategoritë", icon: Tags },
+  { to: "/lokacionet", label: "Lokacionet", icon: DoorOpen },
   { to: "/levizjet", label: "Lëvizjet", icon: ArrowLeftRight },
   { to: "/raportet", label: "Raportet", icon: FileBarChart2 },
   { to: "/perdoruesit", label: "Përdoruesit", icon: Users, adminOnly: true },
