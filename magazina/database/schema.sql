@@ -39,11 +39,11 @@ CREATE TABLE IF NOT EXISTS products (
     category_id    INTEGER       REFERENCES categories(id) ON DELETE SET NULL,
     description    TEXT,                                -- Përshkrimi
     unit           VARCHAR(20)   NOT NULL DEFAULT 'copë', -- Njësia matëse
-    quantity       NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    quantity       NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK (quantity >= 0),  -- Totali (shuma e stock_levels)
     min_stock      NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK (min_stock >= 0),
     purchase_price NUMERIC(14,2) CHECK (purchase_price >= 0),
     sale_price     NUMERIC(14,2) CHECK (sale_price >= 0),
-    location       VARCHAR(80),                         -- Vendndodhja në magazinë (p.sh. A-01-3)
+    location       VARCHAR(80),                         -- Vendndodhja përmbledhëse (denormalizuar)
     created_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
@@ -53,26 +53,57 @@ CREATE INDEX IF NOT EXISTS idx_products_category ON products (category_id);
 CREATE INDEX IF NOT EXISTS idx_products_lowstock ON products (quantity, min_stock);
 
 -- ------------------------------------------------------------
--- 4. MOVEMENTS — Lëvizjet e inventarit (hyrje / dalje / transferime)
+-- 4. LOCATIONS — Lokacionet e magazinës (kate / dhoma / zyra / zona)
 -- ------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS movements (
-    id            SERIAL PRIMARY KEY,
-    product_id    INTEGER       NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    type          VARCHAR(10)   NOT NULL CHECK (type IN ('in', 'out', 'transfer')),
-    quantity      NUMERIC(14,3) NOT NULL CHECK (quantity > 0),
-    from_location VARCHAR(80),                       -- për dalje / transferime
-    to_location   VARCHAR(80),                       -- për hyrje / transferime
-    note          TEXT,                              -- komente
-    user_id       INTEGER       REFERENCES users(id) ON DELETE SET NULL,
-    created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS locations (
+    id          SERIAL PRIMARY KEY,
+    name        VARCHAR(120) NOT NULL UNIQUE,
+    type        VARCHAR(10)  NOT NULL DEFAULT 'dhome'
+                CHECK (type IN ('kat', 'dhome', 'zyre', 'zone', 'tjeter')),
+    description TEXT,
+    is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_movements_product ON movements (product_id);
-CREATE INDEX IF NOT EXISTS idx_movements_date    ON movements (created_at);
-CREATE INDEX IF NOT EXISTS idx_movements_type    ON movements (type);
+-- ------------------------------------------------------------
+-- 5. STOCK_LEVELS — Stoku i çdo produkti në çdo lokacion
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS stock_levels (
+    id          SERIAL PRIMARY KEY,
+    product_id  INTEGER       NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    location_id INTEGER       NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+    quantity    NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    updated_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    UNIQUE (product_id, location_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_levels_location ON stock_levels (location_id);
 
 -- ------------------------------------------------------------
--- 5. NOTIFICATIONS — Njoftimet për stok të ulët
+-- 6. MOVEMENTS — Lëvizjet e inventarit (hyrje / dalje / transferime)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS movements (
+    id               SERIAL PRIMARY KEY,
+    product_id       INTEGER       NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    type             VARCHAR(10)   NOT NULL CHECK (type IN ('in', 'out', 'transfer')),
+    quantity         NUMERIC(14,3) NOT NULL CHECK (quantity > 0),
+    from_location    VARCHAR(80),                       -- emri (historik)
+    to_location      VARCHAR(80),                       -- emri (historik)
+    from_location_id INTEGER       REFERENCES locations(id) ON DELETE SET NULL,
+    to_location_id   INTEGER       REFERENCES locations(id) ON DELETE SET NULL,
+    note             TEXT,                              -- komente
+    user_id          INTEGER       REFERENCES users(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_movements_product  ON movements (product_id);
+CREATE INDEX IF NOT EXISTS idx_movements_date     ON movements (created_at);
+CREATE INDEX IF NOT EXISTS idx_movements_type     ON movements (type);
+CREATE INDEX IF NOT EXISTS idx_movements_from_loc ON movements (from_location_id);
+CREATE INDEX IF NOT EXISTS idx_movements_to_loc   ON movements (to_location_id);
+
+-- ------------------------------------------------------------
+-- 7. NOTIFICATIONS — Njoftimet për stok të ulët
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS notifications (
     id         SERIAL PRIMARY KEY,
@@ -85,7 +116,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (is_read) WHERE is_read = FALSE;
 
 -- ------------------------------------------------------------
--- Trigger: përditëso updated_at te produktet
+-- Trigger: përditëso updated_at te produktet dhe stock_levels
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
 BEGIN
@@ -99,6 +130,11 @@ CREATE TRIGGER trg_products_updated
     BEFORE UPDATE ON products
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_stock_levels_updated ON stock_levels;
+CREATE TRIGGER trg_stock_levels_updated
+    BEFORE UPDATE ON stock_levels
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
 -- ------------------------------------------------------------
 -- VIEW: Produktet me stok të ulët (për raporte dhe dashboard)
 -- ------------------------------------------------------------
@@ -107,5 +143,33 @@ SELECT p.*, c.name AS category_name
 FROM products p
 LEFT JOIN categories c ON c.id = p.category_id
 WHERE p.quantity <= p.min_stock;
+
+-- ------------------------------------------------------------
+-- VIEW: Gjendja aktive e stokut për çdo lokacion
+-- ------------------------------------------------------------
+CREATE OR REPLACE VIEW v_location_stock AS
+SELECT l.id   AS location_id,
+       l.name AS location_name,
+       l.type AS location_type,
+       l.is_active,
+       p.id   AS product_id,
+       p.code,
+       p.name AS product_name,
+       p.unit,
+       c.name AS category_name,
+       sl.quantity,
+       ROUND(sl.quantity * COALESCE(p.purchase_price, 0), 2) AS stock_value
+FROM stock_levels sl
+JOIN locations l ON l.id = sl.location_id
+JOIN products p ON p.id = sl.product_id
+LEFT JOIN categories c ON c.id = p.category_id
+WHERE sl.quantity > 0;
+
+-- ------------------------------------------------------------
+-- Lokacioni bazë
+-- ------------------------------------------------------------
+INSERT INTO locations (name, type, description)
+VALUES ('Magazina kryesore', 'zone', 'Lokacioni bazë i krijuar automatikisht')
+ON CONFLICT (name) DO NOTHING;
 
 COMMIT;
