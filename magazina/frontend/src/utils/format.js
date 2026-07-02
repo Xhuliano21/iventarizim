@@ -1,3 +1,11 @@
+export const LOCATION_TYPE_LABELS = {
+  kat: "Kat",
+  dhome: "Dhomë",
+  zyre: "Zyrë",
+  zone: "Zonë",
+  tjeter: "Tjetër"
+};
+
 export const MOVEMENT_LABELS = {
   in: "Hyrje",
   out: "Dalje",
