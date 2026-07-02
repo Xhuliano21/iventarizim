@@ -45,6 +45,26 @@ async function main() {
       ON CONFLICT (code) DO NOTHING
     `);
 
+
+    // --- Lokacionet (kate / dhoma / zyra) ---
+    await client.query(`
+      INSERT INTO locations (name, type, description) VALUES
+        ('Magazina kryesore', 'zone', 'Lokacioni bazë i magazinës'),
+        ('Kati 1', 'kat', 'Kati i parë — materiale të rënda'),
+        ('Dhoma A', 'dhome', 'Dhoma e veglave dhe pajisjeve'),
+        ('Zyra e pritjes', 'zyre', 'Stok i vogël pranë zyrës')
+      ON CONFLICT (name) DO NOTHING
+    `);
+
+    // --- Stoku fillestar i çdo produkti vendoset në lokacionin bazë ---
+    await client.query(`
+      INSERT INTO stock_levels (product_id, location_id, quantity)
+      SELECT p.id, (SELECT id FROM locations WHERE name = 'Magazina kryesore'), p.quantity
+      FROM products p
+      WHERE p.quantity > 0
+      ON CONFLICT (product_id, location_id) DO NOTHING
+    `);
+
     // --- Njoftim për produktin me stok të ulët (PRD-004: 4 < 6) ---
     await client.query(`
       INSERT INTO notifications (product_id, message)
