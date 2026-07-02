@@ -10,7 +10,7 @@ import { fmtDate, fmtMoney, fmtNum } from "../utils/format";
 
 const EMPTY = {
   code: "", name: "", category_id: "", description: "", unit: "copë",
-  quantity: 0, min_stock: 0, purchase_price: "", sale_price: "", location: ""
+  quantity: 0, min_stock: 0, purchase_price: "", sale_price: "", location_id: ""
 };
 
 export default function Products() {
@@ -39,8 +39,11 @@ export default function Products() {
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [locations, setLocations] = useState([]);
+
   useEffect(() => {
     api.get("/categories").then((r) => setCategories(r.data)).catch(() => {});
+    api.get("/locations", { params: { active: 1 } }).then((r) => setLocations(r.data)).catch(() => {});
   }, []);
 
   const load = useCallback(() => {
@@ -70,7 +73,7 @@ export default function Products() {
       description: p.description || "", unit: p.unit,
       quantity: p.quantity, min_stock: p.min_stock,
       purchase_price: p.purchase_price ?? "", sale_price: p.sale_price ?? "",
-      location: p.location || ""
+      location_id: ""
     });
     setFormError("");
     setModalOpen(true);
@@ -129,7 +132,13 @@ export default function Products() {
     { key: "min_stock", header: "Min.", sortable: true, render: (p) => fmtNum(p.min_stock) },
     { key: "purchase_price", header: "Ç. blerjes", sortable: true, render: (p) => fmtMoney(p.purchase_price) },
     { key: "sale_price", header: "Ç. shitjes", sortable: true, render: (p) => fmtMoney(p.sale_price) },
-    { key: "location", header: "Vendndodhja", render: (p) => <LocationTag value={p.location} /> },
+    {
+      key: "location", header: "Vendndodhja",
+      render: (p) =>
+        p.locations_summary
+          ? <span className="block max-w-[220px] truncate text-xs text-ink/60" title={p.locations_summary}>{p.locations_summary}</span>
+          : <LocationTag value={p.location} />
+    },
     { key: "created_at", header: "Krijuar", sortable: true, render: (p) => <span className="text-xs text-ink/55">{fmtDate(p.created_at)}</span> },
     {
       key: "_actions", header: "",
@@ -211,8 +220,18 @@ export default function Products() {
             <Field label="Njësia matëse">
               <input className="input" value={form.unit} onChange={set("unit")} placeholder="copë, kg, m, litër…" />
             </Field>
-            <Field label="Sasia aktuale">
-              <input type="number" min="0" step="any" className="input" value={form.quantity} onChange={set("quantity")} />
+            <Field label={editing ? "Sasia aktuale (vetëm lexim)" : "Sasia fillestare"}>
+              <input
+                type="number" min="0" step="any" className="input"
+                value={form.quantity} onChange={set("quantity")}
+                disabled={!!editing}
+                title={editing ? "Sasia ndryshohet vetëm përmes lëvizjeve (hyrje / dalje)" : undefined}
+              />
+              {editing && (
+                <p className="mt-1 text-xs text-ink/50">
+                  Sasia dhe vendndodhja ndryshohen vetëm përmes lëvizjeve (hyrje / dalje / transferim).
+                </p>
+              )}
             </Field>
             <Field label="Stoku minimal">
               <input type="number" min="0" step="any" className="input" value={form.min_stock} onChange={set("min_stock")} />
@@ -223,9 +242,20 @@ export default function Products() {
             <Field label="Çmimi i shitjes (L)">
               <input type="number" min="0" step="0.01" className="input" value={form.sale_price} onChange={set("sale_price")} />
             </Field>
-            <Field label="Vendndodhja në magazinë">
-              <input className="input" value={form.location} onChange={set("location")} placeholder="p.sh. A-01-3" />
-            </Field>
+            {!editing ? (
+              <Field label="Vendosja fillestare (lokacioni)">
+                <select className="input" value={form.location_id} onChange={set("location_id")}>
+                  <option value="">Magazina kryesore (parazgjedhje)</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </Field>
+            ) : (
+              <Field label="Vendndodhja aktuale">
+                <p className="input flex items-center bg-ink/[0.03] text-sm text-ink/60">
+                  {editing.locations_summary || editing.location || "—"}
+                </p>
+              </Field>
+            )}
           </div>
 
           <Field label="Përshkrimi">

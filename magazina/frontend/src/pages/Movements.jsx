@@ -12,16 +12,19 @@ const TYPE_META = {
   transfer: { tone: "ink", icon: ArrowLeftRight }
 };
 
-const EMPTY = { product_id: "", type: "in", quantity: "", from_location: "", to_location: "", note: "" };
+const EMPTY = { product_id: "", type: "in", quantity: "", from_location_id: "", to_location_id: "", note: "" };
 
 export default function Movements() {
   const [rows, setRows] = useState([]);
   const [meta, setMeta] = useState({ page: 1, pages: 1, total: 0 });
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [productStock, setProductStock] = useState([]); // stoku i produktit të zgjedhur sipas lokacioneve
 
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
@@ -32,7 +35,16 @@ export default function Movements() {
   const [saving, setSaving] = useState(false);
 
   const loadProducts = () => api.get("/products/all").then((r) => setProducts(r.data)).catch(() => {});
-  useEffect(() => { loadProducts(); }, []);
+  const loadLocations = () => api.get("/locations", { params: { active: 1 } }).then((r) => setLocations(r.data)).catch(() => {});
+  useEffect(() => { loadProducts(); loadLocations(); }, []);
+
+  // Kur ndryshon produkti në formular, ngarko stokun e tij sipas lokacioneve
+  useEffect(() => {
+    if (!form.product_id) { setProductStock([]); return; }
+    api.get(`/products/${form.product_id}/stock`)
+      .then((r) => setProductStock(r.data))
+      .catch(() => setProductStock([]));
+  }, [form.product_id]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -41,18 +53,17 @@ export default function Movements() {
         page, limit: 10,
         search: search || undefined,
         type: type || undefined,
+        location_id: locationId || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined
       }
     })
       .then((r) => { setRows(r.data.data); setMeta(r.data); })
       .finally(() => setLoading(false));
-  }, [page, search, type, dateFrom, dateTo]);
+  }, [page, search, type, locationId, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [search, type, dateFrom, dateTo]);
-
-  const selectedProduct = products.find((p) => String(p.id) === String(form.product_id));
+  useEffect(() => { setPage(1); }, [search, type, locationId, dateFrom, dateTo]);
 
   const openCreate = (t = "in") => { setForm({ ...EMPTY, type: t }); setFormError(""); setModalOpen(true); };
 
@@ -64,7 +75,8 @@ export default function Movements() {
       await api.post("/movements", form);
       setModalOpen(false);
       load();
-      loadProducts(); // rifresko sasitë në dropdown
+      loadProducts();   // rifresko sasitë në dropdown
+      loadLocations();  // rifresko statistikat e lokacioneve
     } catch (err) {
       setFormError(err.response?.data?.error || "Regjistrimi dështoi");
     } finally {
@@ -73,6 +85,10 @@ export default function Movements() {
   };
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const setProduct = (e) =>
+    setForm((f) => ({ ...f, product_id: e.target.value, from_location_id: "", to_location_id: "" }));
+
+  const fromStock = productStock.find((s) => String(s.location_id) === String(form.from_location_id));
 
   const columns = [
     { key: "created_at", header: "Data", render: (m) => <span className="whitespace-nowrap text-xs text-ink/60">{fmtDateTime(m.created_at)}</span> },
@@ -123,7 +139,7 @@ export default function Movements() {
         </div>
       </div>
 
-      <div className="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink/35" />
           <input className="input !pl-8" placeholder="Kërko produkt…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -133,6 +149,10 @@ export default function Movements() {
           <option value="in">Hyrje</option>
           <option value="out">Dalje</option>
           <option value="transfer">Transferime</option>
+        </select>
+        <select className="input" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+          <option value="">Të gjitha lokacionet</option>
+          {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
         <input type="date" className="input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title="Nga data" />
         <input type="date" className="input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title="Deri më" />
@@ -156,7 +176,7 @@ export default function Movements() {
           </Field>
 
           <Field label="Produkti" required>
-            <select className="input" value={form.product_id} onChange={set("product_id")} required>
+            <select className="input" value={form.product_id} onChange={setProduct} required>
               <option value="">Zgjidh produktin…</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -171,21 +191,48 @@ export default function Movements() {
           </Field>
 
           {form.type === "in" && (
-            <Field label="Vendndodhja e vendosjes">
-              <input className="input" value={form.to_location} onChange={set("to_location")}
-                     placeholder={selectedProduct?.location || "p.sh. A-01-3"} />
+            <Field label="Vendosja në lokacion" required>
+              <select className="input" value={form.to_location_id} onChange={set("to_location_id")} required>
+                <option value="">Zgjidh lokacionin…</option>
+                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
             </Field>
           )}
+
+          {(form.type === "out" || form.type === "transfer") && (
+            <Field label={form.type === "out" ? "Nga lokacioni" : "Nga lokacioni (nisja)"} required>
+              <select className="input" value={form.from_location_id} onChange={set("from_location_id")} required disabled={!form.product_id}>
+                <option value="">
+                  {!form.product_id
+                    ? "Zgjidhni fillimisht produktin…"
+                    : productStock.length === 0
+                      ? "Produkti nuk ka stok në asnjë lokacion"
+                      : "Zgjidh lokacionin…"}
+                </option>
+                {productStock.map((s) => (
+                  <option key={s.location_id} value={s.location_id}>
+                    {s.name} — stok: {fmtNum(s.quantity)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
           {form.type === "transfer" && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Nga vendndodhja">
-                <input className="input" value={form.from_location} onChange={set("from_location")}
-                       placeholder={selectedProduct?.location || ""} />
-              </Field>
-              <Field label="Te vendndodhja" required>
-                <input className="input" value={form.to_location} onChange={set("to_location")} required />
-              </Field>
-            </div>
+            <Field label="Te lokacioni (mbërritja)" required>
+              <select className="input" value={form.to_location_id} onChange={set("to_location_id")} required>
+                <option value="">Zgjidh lokacionin…</option>
+                {locations
+                  .filter((l) => String(l.id) !== String(form.from_location_id))
+                  .map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </Field>
+          )}
+
+          {fromStock && (form.type === "out" || form.type === "transfer") && (
+            <p className="text-xs text-ink/55">
+              Në dispozicion në "{fromStock.name}": <b>{fmtNum(fromStock.quantity)}</b>
+            </p>
           )}
 
           <Field label="Koment">
