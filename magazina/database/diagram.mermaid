@@ -1,0 +1,54 @@
+erDiagram
+    USERS {
+        int id PK
+        varchar name
+        varchar email UK
+        varchar password_hash
+        varchar role "admin | user"
+        boolean is_active
+        timestamptz created_at
+    }
+    CATEGORIES {
+        int id PK
+        varchar name UK
+        text description
+        timestamptz created_at
+    }
+    PRODUCTS {
+        int id PK
+        varchar code UK "Kodi unik"
+        varchar name "Emertimi"
+        int category_id FK
+        text description
+        varchar unit "Njesia matese"
+        numeric quantity "Sasia aktuale"
+        numeric min_stock "Stoku minimal"
+        numeric purchase_price
+        numeric sale_price
+        varchar location "Vendndodhja"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    MOVEMENTS {
+        int id PK
+        int product_id FK
+        varchar type "in | out | transfer"
+        numeric quantity
+        varchar from_location
+        varchar to_location
+        text note
+        int user_id FK
+        timestamptz created_at
+    }
+    NOTIFICATIONS {
+        int id PK
+        int product_id FK
+        text message
+        boolean is_read
+        timestamptz created_at
+    }
+
+    CATEGORIES ||--o{ PRODUCTS : "kategorizon"
+    PRODUCTS ||--o{ MOVEMENTS : "ka levizje"
+    USERS ||--o{ MOVEMENTS : "regjistron"
+    PRODUCTS ||--o{ NOTIFICATIONS : "gjeneron"
