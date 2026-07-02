@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Categories from "./pages/Categories";
+import Locations from "./pages/Locations";
 import Movements from "./pages/Movements";
 import Reports from "./pages/Reports";
 import UsersPage from "./pages/Users";
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/produktet" element={<Products />} />
         <Route path="/kategorite" element={<Categories />} />
+        <Route path="/lokacionet" element={<Locations />} />
         <Route path="/levizjet" element={<Movements />} />
         <Route path="/raportet" element={<Reports />} />
         <Route path="/perdoruesit" element={<Protected adminOnly><UsersPage /></Protected>} />
